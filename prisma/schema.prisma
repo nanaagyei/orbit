@@ -1,0 +1,327 @@
+// This is your Prisma schema file
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Better Auth models
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  features      UserFeature[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
+}
+
+model UserFeature {
+  id        String   @id @default(cuid())
+  userId    String
+  featureId String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, featureId])
+  @@index([userId])
+}
+
+enum RelationshipStage {
+  NEW
+  CONNECTED
+  CHATTED
+  ONGOING
+  INNER_CIRCLE
+}
+
+enum InteractionType {
+  COFFEE_CHAT
+  MEETUP
+  DM
+  EMAIL
+  CALL
+}
+
+enum FollowUpType {
+  THANK_YOU
+  NUDGE
+  VALUE_RECONNECT
+  CHECK_IN
+}
+
+enum FollowUpStatus {
+  OPEN
+  DONE
+}
+
+enum EventRSVPStatus {
+  INTERESTED
+  GOING
+  WENT
+  NOT_GOING
+}
+
+enum PaperStatus {
+  PLANNED
+  READING
+  READ
+  IMPLEMENTED
+  REVISITED
+}
+
+model Person {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  headline    String?           // e.g., "Senior ML Engineer @ Reddit"
+  company     String?
+  location    String?
+  linkedinUrl String?
+  stage       RelationshipStage @default(NEW)
+  notes       String?           // General notes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  interactions Interaction[]
+  followUps    FollowUp[]
+  tags         PersonTag[]
+  events       EventAttendance[]
+  papers       PaperPerson[]
+
+  @@index([userId])
+}
+
+model Interaction {
+  id          String          @id @default(cuid())
+  userId      String
+  personId    String
+  type        InteractionType
+  date        DateTime
+  summary     String?         // Brief overview
+  keyInsights String?         // What I learned
+  advice      String?         // Advice received
+  nextSteps   String?         // My next actions
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model FollowUp {
+  id       String         @id @default(cuid())
+  userId   String
+  personId String?        // Nullable for general follow-ups
+  dueDate  DateTime
+  type     FollowUpType
+  status   FollowUpStatus @default(OPEN)
+  notes    String?
+  context  String?        // Related interaction/event context
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  person Person? @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([dueDate, status])
+}
+
+model Event {
+  id         String          @id @default(cuid())
+  userId     String
+  title      String
+  host       String?
+  dateTime   DateTime
+  location   String?
+  link       String?
+  rsvpStatus EventRSVPStatus @default(INTERESTED)
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendees EventAttendance[]
+
+  @@index([userId])
+}
+
+model Paper {
+  id     String      @id @default(cuid())
+  userId String
+  title  String
+  authors String?
+  year   Int?
+  venue  String?     // NeurIPS, ICML, arXiv, etc.
+  url    String?     // arXiv/PDF link
+  status PaperStatus @default(PLANNED)
+
+  // Structured reflection fields
+  whyRead             String? // Why I read this
+  coreIdea            String? // Core idea in my own words
+  keyConcepts         String? // Key equations/concepts
+  implementationNotes String? // Bridge to practice
+  surprises           String? // What surprised me
+  thinkingShift       String? // How this changed my thinking
+  followUps           String? // Follow-up papers/experiments
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags   PaperTag[]
+  people PaperPerson[]
+
+  @@index([userId])
+}
+
+model Tag {
+  id     String  @id @default(cuid())
+  userId String
+  name   String
+  color  String? // Hex color for UI
+
+  createdAt DateTime @default(now())
+
+  people PersonTag[]
+  papers PaperTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+// Join tables
+model PersonTag {
+  personId String
+  tagId    String
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([personId, tagId])
+}
+
+model EventAttendance {
+  eventId  String
+  personId String
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, personId])
+}
+
+model PaperTag {
+  paperId String
+  tagId   String
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([paperId, tagId])
+}
+
+model PaperPerson {
+  paperId  String
+  personId String
+  context  String? // e.g., "recommended_by" or "discussed_with"
+
+  paper  Paper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([paperId, personId])
+}
+
+// User positioning/narrative
+model Positioning {
+  id       String  @id @default(cuid())
+  userId   String
+  type     String  // "primary", "variant", "north_star", "niche", "project", "weekly_focus", "weekly_reflection"
+  content  String
+  isActive Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Calendar sync configuration
+model CalendarSync {
+  id            String    @id @default(cuid())
+  userId        String
+  provider      String    // "google"
+  accessToken   String    // Encrypted token
+  refreshToken  String?   // Encrypted refresh token
+  calendarId    String?   // Google Calendar ID
+  lastSyncAt    DateTime?
+  syncEnabled   Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
